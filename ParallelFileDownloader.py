@@ -55,7 +55,7 @@ def handle_index_file(index_url) -> list:
         return file_urls
 
 def handle_downloads(file_urls, connection_count):
-    count = 0
+    file_count = 0
     for url in file_urls:
         file_parts = []
         parsed_url = address_parser(url)
@@ -70,10 +70,10 @@ def handle_downloads(file_urls, connection_count):
         result = str(tcp_socket.recv(4096), 'utf-8')
         status = result[:result.index('\n')]
         if '200' not in status and '301' not in status:
-            count += 1
-            print(f'{count} {url} not found.')
+            file_count += 1
+            print(f'{file_count} {url} not found.')
         else:
-            count += 1
+            file_count += 1
             file_name = path.split('/')[-1]
             for line in result.split('\n'):
                 if "Content-Length" in line:
@@ -93,9 +93,9 @@ def handle_downloads(file_urls, connection_count):
                             t.setDaemon(True)
                             t.start()
                     else:
-                        count = 0
+                        connection_threshold = 0
                         for i in range(connection_count):
-                            if (count < content_length - math.floor(content_length / connection_count) * connection_count):
+                            if (connection_threshold < content_length - math.floor(content_length / connection_count) * connection_count):
                                 part = math.floor(content_length / connection_count) + 1
                             else:
                                 part = math.floor(content_length / connection_count)
@@ -106,14 +106,14 @@ def handle_downloads(file_urls, connection_count):
                             t = threading.Thread(target=downloader, kwargs=args)
                             t.daemon = True
                             t.start()
-                            count += 1
+                            connection_threshold += 1
                     # Join the threads
                     main_thread = threading.current_thread()
                     for t in threading.enumerate():
                         if t is main_thread:
                             continue
                         t.join()
-                    print(f'{count}. {file_name} (size = {content_length}) is downloaded')
+                    print(f'{file_count}. {file_name} (size = {content_length}) is downloaded')
                     for i in range(0, len(file_parts) - 1):
                         part = file_parts[i]
                         print(f'File parts: {part[0]}:{part[1]}({part[1] - part[0]}), ', end='')
