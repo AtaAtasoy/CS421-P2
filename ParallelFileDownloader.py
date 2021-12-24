@@ -42,7 +42,6 @@ def handle_index_file(index_url) -> list:
     request = f'GET {path} HTTP/1.1\r\nHost:{host}\r\n\r\n'
     tcp_socket.sendall(bytes(request, encoding="utf-8"))
     
-
     result = str(tcp_socket.recv(4096), 'utf-8')
     status = result[:result.index('\n')]
     if '200' not in status and '301' not in status:
@@ -67,58 +66,66 @@ def handle_downloads(file_urls, connection_count):
         tcp_socket.sendall(bytes(request, encoding="utf-8"))
 
         # Send the HEAD request to check if file exists
-        result = str(tcp_socket.recv(4096), 'utf-8')
-        status = result[:result.index('\n')]
-        if '200' not in status and '301' not in status:
+        response = str(tcp_socket.recv(4096), 'utf-8')
+        response_map = {}
+        response_map['Status'] = response[:response.index('\n')]
+        for resp in response.split('\n'):
+            line = resp.strip().split(':')
+            if len(line) > 1:
+                response_map[line[0]] = line[1]
+
+        if '200' not in response_map['Status'] and '301' not in response_map['Status']:
             file_count += 1
             print(f'{file_count} {url} not found.')
         else:
             file_count += 1
             file_name = path.split('/')[-1]
-            for line in result.split('\n'):
-                if "Content-Length" in line:
-                    content_length = int(line[line.index(':') + 1:])
-                    fp = open(file_name, "wb")
-                    fp.write(bytes('\0' * content_length, encoding='utf-8'))
-                    fp.close()
-                    
-                    if content_length % connection_count == 0:
-                        part = int(content_length / connection_count)
-                        for i in range(connection_count):
-                            start = part * i
-                            end = start + part
-                            file_parts.append((start, end))
-                            args = {'start': start, 'end': end, 'url': url, 'filename': file_name}
-                            t = threading.Thread(target=downloader, kwargs=args)
-                            t.setDaemon(True)
-                            t.start()
-                    else:
-                        connection_threshold = 0
-                        for i in range(connection_count):
-                            if (connection_threshold < content_length - math.floor(content_length / connection_count) * connection_count):
-                                part = math.floor(content_length / connection_count) + 1
-                            else:
-                                part = math.floor(content_length / connection_count)
-                            start = part * i
-                            end = start + part
-                            file_parts.append((start, end))
-                            args = {'start': start, 'end': end, 'url': url, 'filename': file_name}
-                            t = threading.Thread(target=downloader, kwargs=args)
-                            t.daemon = True
-                            t.start()
-                            connection_threshold += 1
-                    # Join the threads
-                    main_thread = threading.current_thread()
-                    for t in threading.enumerate():
-                        if t is main_thread:
-                            continue
-                        t.join()
-                    print(f'{file_count}. {file_name} (size = {content_length}) is downloaded')
-                    for i in range(0, len(file_parts) - 1):
-                        part = file_parts[i]
-                        print(f'File parts: {part[0]}:{part[1]}({part[1] - part[0]}), ', end='')
-                    last_chunk = file_parts[len(file_parts) - 1]
-                    print(f'{last_chunk[0]}:{last_chunk[1]}({last_chunk[1] - last_chunk[0]})')
+            if "Content-Length" in response_map.keys():
+                content_length = int(response_map['Content-Length'])
+                fp = open(file_name, "wb")
+                fp.write(bytes('\0' * content_length, encoding='utf-8'))
+                fp.close()
+                
+                if content_length % connection_count == 0:
+                    part = int(content_length / connection_count)
+                    for i in range(connection_count):
+                        start = part * i
+                        end = start + part
+                        file_parts.append((start, end))
+                        args = {'start': start, 'end': end, 'url': url, 'filename': file_name}
+                        t = threading.Thread(target=downloader, kwargs=args)
+                        t.setDaemon(True)
+                        t.start()
+                else:
+                    connection_threshold = 0
+                    for i in range(connection_count):
+                        if (connection_threshold < content_length - math.floor(content_length / connection_count) * connection_count):
+                            part = math.floor(content_length / connection_count) + 1
+                        else:
+                            part = math.floor(content_length / connection_count)
+                        start = part * i
+                        end = start + part
+                        file_parts.append((start, end))
+                        args = {'start': start, 'end': end, 'url': url, 'filename': file_name}
+                        t = threading.Thread(target=downloader, kwargs=args)
+                        t.daemon = True
+                        t.start()
+                        connection_threshold += 1
+                # Join the threads
+                main_thread = threading.current_thread()
+                for t in threading.enumerate():
+                    if t is main_thread:
+                        continue
+                    t.join()
+                print(f'{file_count}. {file_name} (size = {content_length}) is downloaded')
+                print('File parts: ', end= '')
+                for i in range(0, len(file_parts) - 1):
+                    part = file_parts[i]
+                    print(f'{part[0]}:{part[1]}({part[1] - part[0]}), ', end='')
+                last_chunk = file_parts[len(file_parts) - 1]
+                print(f'{last_chunk[0]}:{last_chunk[1]}({last_chunk[1] - last_chunk[0]})')
+            else:
+                print(f'{file_count} {url} did not provide Content-Length value. Cannot be downloaded.')
 
 if __name__ == "__main__":
     cmd_args = sys.argv[1:]
